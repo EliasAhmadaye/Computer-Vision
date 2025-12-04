@@ -1,0 +1,17 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Dossiers du dataset
+Data/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Fichiers PyCharm
+.idea/
+*.iml
+
+# Autres fichiers inutiles
+*.log
