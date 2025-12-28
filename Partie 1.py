@@ -1,95 +1,148 @@
-
-import os, random, pickle
+import os
+import random
+import pickle
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
 
+
+# Lister les fichiers images
+
 def get_file_list(path, ext):
     ext = ext.lower()
-    return [os.path.join(r, f)
-            for r, _, fs in os.walk(path)
-            for f in fs if f.lower().endswith(ext)]
+    files = []
+
+    for root, _, names in os.walk(path):
+        for name in names:
+            if name.lower().endswith(ext):
+                files.append(os.path.join(root, name))
+
+    return files
 
 
+# Lire une image
 def read_image(filepath):
-    img = cv2.imread(filepath, cv2.IMREAD_COLOR)
-    if img is None:
+    image = cv2.imread(filepath, cv2.IMREAD_COLOR)
+
+    if image is None:
         raise FileNotFoundError(filepath)
-    return img
+
+    return image
 
 
+
+# Lire plusieurs images
 def read_all_images(filenames, dimensions, keepRatio=True):
     W, H = dimensions
-    imgs = []
-    for fp in filenames:
-        img = read_image(fp)
+    images = []
+
+    for path in filenames:
+        img = read_image(path)
+
+        # Redimensionnement simple (déformation possible)
         if not keepRatio:
-            imgs.append(cv2.resize(img, (W, H)))
+            images.append(cv2.resize(img, (W, H)))
             continue
+
+        # Redimensionnement en gardant le ratio
         h, w = img.shape[:2]
-        s = min(W / w, H / h)
-        nw, nh = int(w * s), int(h * s)
-        r = cv2.resize(img, (nw, nh))
-        canvas = np.zeros((H, W, 3), np.uint8)
-        y, x = (H - nh) // 2, (W - nw) // 2
-        canvas[y:y + nh, x:x + nw] = r
-        imgs.append(canvas)
-    return imgs
+        scale = min(W / w, H / h)
+        new_w, new_h = int(w * scale), int(h * scale)
+
+        resized = cv2.resize(img, (new_w, new_h))
+
+        # Fond noir + image centrée
+        canvas = np.zeros((H, W, 3), dtype=np.uint8)
+        x = (W - new_w) // 2
+        y = (H - new_h) // 2
+        canvas[y:y + new_h, x:x + new_w] = resized
+
+        images.append(canvas)
+
+    return images
 
 
+
+# Afficher une image
 def display_image(image, title=None):
-    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    if title: plt.title(title)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    plt.imshow(image_rgb)
+    if title:
+        plt.title(title)
     plt.axis("off")
     plt.show()
 
 
+
+# Afficher plusieurs images
+
 def display_images(images, rows, columns):
     fig, axes = plt.subplots(rows, columns, figsize=(4 * columns, 3 * rows))
     axes = np.array(axes).reshape(-1)
+
     for i, ax in enumerate(axes):
         ax.axis("off")
         if i < len(images):
             ax.imshow(cv2.cvtColor(images[i], cv2.COLOR_BGR2RGB))
+
     plt.tight_layout()
     plt.show()
 
 
-# resize_image(images, ratio, (max_width, max_height))
+
+# Redimensionnement d’image(s)
+
 def resize_image(images, ratio=1.0, max_size=(None, None)):
     max_w, max_h = max_size
 
-    def _one(img):
+    def resize_one(img):
         h, w = img.shape[:2]
-        w2, h2 = int(w * ratio), int(h * ratio)
+        new_w, new_h = int(w * ratio), int(h * ratio)
+
         if max_w or max_h:
-            s = min((max_w / w2) if max_w else 1.0, (max_h / h2) if max_h else 1.0)
-            w2, h2 = int(w2 * s), int(h2 * s)
-        return cv2.resize(img, (w2, h2))
+            scale = min(
+                (max_w / new_w) if max_w else 1.0,
+                (max_h / new_h) if max_h else 1.0
+            )
+            new_w, new_h = int(new_w * scale), int(new_h * scale)
 
-    return _one(images) if isinstance(images, np.ndarray) else [_one(im) for im in images]
+        return cv2.resize(img, (new_w, new_h))
+
+    # Une image
+    if isinstance(images, np.ndarray):
+        return resize_one(images)
+
+    # Plusieurs images
+    return [resize_one(img) for img in images]
 
 
+
+# Mélanger un dataset
 def shuffle_dataset(dataset):
-    d = list(dataset)
-    random.shuffle(d)
-    return d
+    shuffled = list(dataset)
+    random.shuffle(shuffled)
+    return shuffled
 
-
+# Diviser un dataset
 def split_dataset(dataset, ratios):
-    d = list(dataset)
-    n = len(d)
-    cuts, acc = [], 0
-    for r in ratios[:-1]:
-        acc += int(round(r * n))
-        cuts.append(acc)
-    out, s = [], 0
-    for c in cuts + [n]:
-        out.append(d[s:c])
-        s = c
-    return out
+    data = list(dataset)
+    n = len(data)
+    parts = []
+    start = 0
 
+    for r in ratios[:-1]:
+        end = start + int(r * n)
+        parts.append(data[start:end])
+        start = end
+
+    parts.append(data[start:])
+    return parts
+
+
+
+# Sauvegarder / charger dataset
 
 def save_dataset(dataset, filepath):
     with open(filepath, "wb") as f:
@@ -101,174 +154,44 @@ def load_dataset(filepath):
         return pickle.load(f)
 
 
+
+# Augmentations d’images
 def image_flip(image, horizontal=True, vertical=False):
-    if horizontal and vertical: return cv2.flip(image, -1)
-    if horizontal: return cv2.flip(image, 1)
-    if vertical: return cv2.flip(image, 0)
+    if horizontal and vertical:
+        return cv2.flip(image, -1)
+    if horizontal:
+        return cv2.flip(image, 1)
+    if vertical:
+        return cv2.flip(image, 0)
     return image
 
 
 def image_crop(image, crop_size, crop_center=True):
-    cw, ch = crop_size
+    crop_w, crop_h = crop_size
     h, w = image.shape[:2]
-    cw, ch = min(cw, w), min(ch, h)
+
+    crop_w = min(crop_w, w)
+    crop_h = min(crop_h, h)
+
     if crop_center:
-        x, y = (w - cw) // 2, (h - ch) // 2
+        x = (w - crop_w) // 2
+        y = (h - crop_h) // 2
     else:
-        x, y = random.randint(0, w - cw), random.randint(0, h - ch)
-    return image[y:y + ch, x:x + cw]
+        x = random.randint(0, w - crop_w)
+        y = random.randint(0, h - crop_h)
+
+    return image[y:y + crop_h, x:x + crop_w]
 
 
 def adjust_brightness(image, brightness_factor):
-    x = image.astype(np.float32) * float(brightness_factor)
-    return np.clip(x, 0, 255).astype(np.uint8)
-
-
-# (objectif) rotation — même si pas listé dans la table
-def image_rotate(image, angle_degrees):
-    h, w = image.shape[:2]
-    M = cv2.getRotationMatrix2D((w / 2, h / 2), angle_degrees, 1.0)
-    return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
-
-
-# (objectif) normalisation — utile pour ML
-def normalize_image(image):
-    return image.astype(np.float32) / 255.0
+    img = image.astype(np.float32)
+    img = img * brightness_factor
+    img = np.clip(img, 0, 255)
+    return img.astype(np.uint8)
 
 
 def augment_image(image, augmentations):
-    out = image
+    result = image
     for aug in augmentations:
-        out = aug(out)
-    return out
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-if __name__ == "__main__":
-    path = r"C:\Users\zenab\PycharmProjects\CV Project\Data\dataset_example\dataset_example\cat"
-    ext = ".jpg"
-    files = get_file_list(path, ext)
-
-    def need_files():
-        if not files:
-            raise ValueError("Aucune image trouvée : vérifie path/ext.")
-        return files
-
-    def one_image():
-        f = need_files()[0]
-        return read_image(f)
-
-    while True:
-        print("\n=== MENU TESTS ===")
-        print("1) get_file_list")
-        print("2) read_image")
-        print("3) read_all_images (5 images)")
-        print("4) display_image (1 image)")
-        print("5) display_images (6 images)")
-        print("6) resize_image (1 image)")
-        print("7) shuffle_dataset (fichiers)")
-        print("8) split_dataset (0.7/0.2/0.1)")
-        print("9) save_dataset + load_dataset (6 images)")
-        print("10) image_flip")
-        print("11) image_crop")
-        print("12) adjust_brightness")
-        print("13) augment_image (pipeline)")
-        print("0) quitter")
-
-        c = input("Choix: ").strip()
-        if c == "0":
-            break
-
-        if c == "1":
-            print("Nb fichiers:", len(files))
-            print("Exemples:", files[:5])
-
-        elif c == "2":
-            img = one_image()
-            print("Image OK:", img.shape)
-
-        elif c == "3":
-            imgs = read_all_images(need_files()[:5], (300, 300), keepRatio=True)
-            print("OK:", len(imgs), imgs[0].shape)
-
-        elif c == "4":
-            display_image(one_image(), "Original")
-
-        elif c == "5":
-            imgs = read_all_images(need_files()[:6], (300, 300), keepRatio=True)
-            display_images(imgs, 2, 3)
-
-        elif c == "6":
-            r = resize_image(one_image(), ratio=0.5, max_size=(200, 200))
-            print("Resize:", r.shape)
-            display_image(r, "Resize")
-
-        elif c == "7":
-            s = shuffle_dataset(need_files())
-            print("Avant:", need_files()[:5])
-            print("Après :", s[:5])
-
-        elif c == "8":
-            tr, va, te = split_dataset(need_files(), (0.7, 0.2, 0.1))
-            print("train/val/test:", len(tr), len(va), len(te))
-
-        elif c == "9":
-            imgs = read_all_images(need_files()[:6], (300, 300), keepRatio=True)
-            save_dataset(imgs, "tmp.pkl")
-            loaded = load_dataset("tmp.pkl")
-            print("Chargé:", len(loaded), loaded[0].shape)
-
-        elif c == "10":
-            img = one_image()
-            display_image(image_flip(img, horizontal=True), "Flip horizontal")
-
-        elif c == "11":
-            img = one_image()
-            display_image(image_crop(img, (200, 200), crop_center=True), "Crop center")
-
-        elif c == "12":
-            img = one_image()
-            display_image(adjust_brightness(img, 0.5), "Sombre")
-            display_image(adjust_brightness(img, 1.5), "Clair")
-
-        elif c == "13":
-            img = one_image()
-            aug = augment_image(img, [
-                lambda x: image_flip(x, horizontal=True),
-                lambda x: image_crop(x, (200, 200), crop_center=True),
-                lambda x: adjust_brightness(x, 1.3),
-            ])
-            display_image(aug, "Pipeline")
-
-        else:
-            print("Choix invalide.")
+        result = aug(result)
+    return result
